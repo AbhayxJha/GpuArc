@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GpuArc | Gravity-Assisted Spray Cooling for AI GPUs</title>
+<meta name="description" content="GpuArc is a concept-stage cooling architecture that sprays coolant directly onto a GPU die and removes the bonded cold plate. First-order thermal analysis included. Open to collaboration.">
+<style>
+  :root{--bg:#04070d;--panel:rgba(12,19,30,.78);--line:rgba(56,189,248,.18);--text:#e8f0f8;--muted:#93a4b8;--accent:#38bdf8;--accent2:#22d3ee;--violet:#a78bfa;--hot:#fb923c;--warn:#fbbf24;--ok:#4ade80}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65;overflow-x:hidden}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px;position:relative}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  /* ===== BACKGROUND STACK ===== */
+  #bg{position:fixed;inset:0;z-index:-6;width:100%;height:100%}
+  .photo{
+    position:fixed;inset:0;z-index:-5;pointer-events:none;
+    background:
+      linear-gradient(180deg,rgba(3,7,16,.38) 0%,rgba(3,7,16,.64) 42%,rgba(3,7,16,.88) 100%),
+      linear-gradient(90deg,rgba(3,7,16,.88) 0%,rgba(3,7,16,.55) 48%,rgba(3,7,16,.28) 100%),
+      url("https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=2400&q=90") center 35%/cover no-repeat;
+    opacity:.78;filter:saturate(1.2) contrast(1.08);
+    transform:scale(1.015)
+  }
+  .photo::after{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(ellipse at 78% 14%,rgba(14,165,233,.18),transparent 38%),
+               linear-gradient(180deg,transparent 0%,rgba(4,7,13,.22) 45%,#04070d 100%);
+  }
+  .traces{position:fixed;inset:0;z-index:-4;pointer-events:none;opacity:.9;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><g fill='none' stroke='%2338bdf8' stroke-opacity='.13' stroke-width='1.2'><path d='M0 40h50l20 20h50M60 180v-50l20-20h100M110 0v34l22 22h48M0 130h30l16 16'/></g><g fill='%2338bdf8' fill-opacity='.28'><circle cx='120' cy='60' r='2.4'/><circle cx='180' cy='110' r='2.4'/><circle cx='180' cy='56' r='2.4'/><circle cx='46' cy='146' r='2.4'/></g></svg>");
+    -webkit-mask-image:radial-gradient(ellipse at 70% 20%,#000,transparent 75%);mask-image:radial-gradient(ellipse at 70% 20%,#000,transparent 75%)}
+  .aurora{position:fixed;inset:0;z-index:-3;overflow:hidden;pointer-events:none}
+  .aurora i{position:absolute;border-radius:50%;filter:blur(95px);opacity:.45;mix-blend-mode:screen}
+  .aurora i:nth-child(1){width:520px;height:520px;background:#0ea5e9;left:-8%;top:-10%;animation:float1 16s ease-in-out infinite alternate}
+  .aurora i:nth-child(2){width:460px;height:460px;background:#7c3aed;right:-10%;top:20%;animation:float2 20s ease-in-out infinite alternate}
+  .aurora i:nth-child(3){width:420px;height:420px;background:#06b6d4;left:30%;bottom:-18%;animation:float3 18s ease-in-out infinite alternate}
+  .aurora i:nth-child(4){width:300px;height:300px;background:#f97316;right:25%;top:-12%;opacity:.2;animation:float1 22s ease-in-out infinite alternate-reverse}
+  @keyframes float1{to{transform:translate(140px,110px) scale(1.25)}}
+  @keyframes float2{to{transform:translate(-160px,90px) scale(.8)}}
+  @keyframes float3{to{transform:translate(120px,-130px) scale(1.2)}}
+  .gridfx{position:fixed;inset:-50% -50% 0 -50%;z-index:-2;pointer-events:none;
+    background:linear-gradient(rgba(56,189,248,.10) 1px,transparent 1px) 0 0/52px 52px,linear-gradient(90deg,rgba(56,189,248,.10) 1px,transparent 1px) 0 0/52px 52px;
+    transform:perspective(500px) rotateX(62deg);transform-origin:50% 100%;animation:gridmove 4s linear infinite;
+    -webkit-mask-image:linear-gradient(to top,#000 0%,transparent 70%);mask-image:linear-gradient(to top,#000 0%,transparent 70%)}
+  @keyframes gridmove{to{background-position:0 52px,52px 0}}
+  .scan{position:fixed;inset:0;z-index:-1;pointer-events:none;background:repeating-linear-gradient(to bottom,rgba(255,255,255,.014) 0 1px,transparent 1px 3px)}
+  #spot{position:fixed;width:520px;height:520px;border-radius:50%;pointer-events:none;z-index:-1;left:0;top:0;background:radial-gradient(circle,rgba(56,189,248,.15),transparent 65%);transform:translate(-50%,-50%)}
+
+  /* ===== NAV ===== */
+  nav{position:sticky;top:0;background:rgba(4,7,13,.72);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);z-index:20}
+  nav .wrap{display:flex;justify-content:space-between;align-items:center;height:60px;gap:14px}
+  .logo{font-weight:800;letter-spacing:1px;font-size:1.15rem;white-space:nowrap}.logo span{color:var(--accent);text-shadow:0 0 18px rgba(56,189,248,.8)}
+  nav ul{display:flex;gap:18px;list-style:none;font-size:.88rem;align-items:center}
+  nav ul a{color:var(--muted);transition:color .2s}nav ul a:hover{color:#fff}
+  .navbtn{border:1px solid var(--hot);color:var(--hot)!important;padding:7px 14px;border-radius:6px;font-weight:700;letter-spacing:1.5px;font-size:.78rem;background:rgba(251,146,60,.08);animation:glowhot 2.6s ease-in-out infinite}
+  .navbtn:hover{background:var(--hot);color:#1a0b00!important}
+  @keyframes glowhot{50%{box-shadow:0 0 16px rgba(251,146,60,.5)}}
+  #progress{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--accent),var(--violet),var(--hot));z-index:30;box-shadow:0 0 12px var(--accent)}
+
+  section,header{padding:92px 0;border-bottom:1px solid var(--line);position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(4,7,13,.12),rgba(4,7,13,.26))}
+  .wrap{z-index:1}
+
+  /* ===== DECORATIVE SPINNING GPU FANS ===== */
+  .deco{position:absolute;pointer-events:none;opacity:.17;z-index:0;filter:drop-shadow(0 0 22px rgba(56,189,248,.5));animation:spin 14s linear infinite}
+  .deco.rev{animation-direction:reverse}
+  .d-idea{right:-90px;top:40px;width:300px}
+  .d-how{left:-100px;bottom:-60px;width:280px;animation-duration:18s}
+  .d-calc{right:-160px;top:120px;width:460px;opacity:.12;animation-duration:22s}
+  .d-collab{left:-120px;top:60px;width:340px;animation-duration:16s}
+  .d-contact{right:-100px;bottom:-90px;width:360px;animation-duration:11s}
+  .logo{display:flex;align-items:center;gap:8px}
+  .mini-fan{width:26px;height:26px;animation:spin 2.2s linear infinite;filter:drop-shadow(0 0 6px rgba(56,189,248,.8))}
+  @media(max-width:760px){.deco{width:200px!important;opacity:.12}}
+  header{overflow:hidden;padding-top:70px;background:linear-gradient(90deg,rgba(4,7,13,.22),transparent 72%)}
+  .eyebrow{color:var(--accent2);font-size:.76rem;letter-spacing:3px;text-transform:uppercase;font-weight:700}
+  .idx{color:var(--hot);margin-right:8px}
+  h1{font-size:clamp(2.2rem,6vw,4.1rem);line-height:1.06;margin:14px 0 16px;letter-spacing:-.5px}
+  h1 em{font-style:normal;background:linear-gradient(90deg,var(--hot),var(--accent),var(--violet),var(--accent2),var(--hot));background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shift 6s linear infinite}
+  @keyframes shift{to{background-position:300% 0}}
+  h2{font-size:1.9rem;margin:8px 0 10px;position:relative;display:inline-block}
+  h2::after{content:"";display:block;height:3px;width:56px;margin-top:8px;background:linear-gradient(90deg,var(--accent),transparent);border-radius:2px}
+  .lead{color:var(--muted);font-size:1.08rem;max-width:690px}
+  .badge{display:inline-block;border:1px solid var(--warn);color:var(--warn);padding:4px 12px;border-radius:999px;font-size:.78rem;margin-top:22px;animation:glow 2.8s ease-in-out infinite}
+  @keyframes glow{50%{box-shadow:0 0 18px rgba(251,191,36,.35)}}
+  .btns{margin-top:26px;display:flex;gap:12px;flex-wrap:wrap}
+  .btn{padding:12px 24px;border-radius:8px;font-weight:600;font-size:.95rem;display:inline-block;transition:transform .2s,box-shadow .2s;cursor:pointer;border:0;font-family:inherit}
+  .btn:hover{transform:translateY(-3px) scale(1.02)}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#031018;animation:pulse 2.4s infinite}
+  .btn.hot{background:linear-gradient(90deg,var(--hot),#f59e0b);color:#1a0b00;letter-spacing:1px}
+  .btn.ghost{border:1px solid var(--line);color:var(--text);background:rgba(255,255,255,.03)}
+  .btn.ghost:hover{border-color:var(--accent)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(56,189,248,.5)}70%{box-shadow:0 0 0 16px rgba(56,189,248,0)}100%{box-shadow:0 0 0 0 rgba(56,189,248,0)}}
+
+  /* ===== HERO GPU ILLUSTRATION ===== */
+  .hero-gpu{position:absolute;right:-120px;bottom:-30px;width:900px;max-width:none;opacity:.36;pointer-events:none;
+    -webkit-mask-image:linear-gradient(to left,#000 35%,transparent 100%);mask-image:linear-gradient(to left,#000 35%,transparent 100%);filter:drop-shadow(0 0 30px rgba(56,189,248,.35))}
+  .fan{animation:spin 1.6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .led{animation:ledhue 6s linear infinite}
+  @keyframes ledhue{to{filter:hue-rotate(360deg)}}
+
+  /* ===== TERMINAL ===== */
+  .term{margin-top:34px;background:rgba(3,6,10,.88);border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:700px;box-shadow:0 0 40px rgba(56,189,248,.12);position:relative}
+  .term-bar{display:flex;gap:7px;padding:10px 14px;background:rgba(11,18,26,.92);border-bottom:1px solid var(--line);align-items:center}
+  .term-bar i{width:10px;height:10px;border-radius:50%;display:block}
+  .term-bar i:nth-child(1){background:#f87171}.term-bar i:nth-child(2){background:#fbbf24}.term-bar i:nth-child(3){background:#4ade80}
+  .term-bar span{margin-left:8px;color:var(--muted);font-size:.78rem}
+  .term-body{padding:18px;min-height:200px;font-size:.93rem;line-height:1.7}
+  .t-prompt{color:var(--accent2)}.t-out{color:var(--muted);display:block;margin-bottom:8px}.t-ok{color:var(--ok)}
+  .caret{display:inline-block;width:8px;height:1.05em;background:var(--accent);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ===== MARQUEE ===== */
+  .marquee{overflow:hidden;border-bottom:1px solid var(--line);background:rgba(8,14,22,.65);padding:14px 0}
+  .marquee div{display:flex;gap:46px;width:max-content;animation:slide 30s linear infinite;color:var(--muted);font-size:.82rem;letter-spacing:2.5px;text-transform:uppercase}
+  .marquee span::before{content:"◆ ";color:var(--hot)}
+  @keyframes slide{to{transform:translateX(-50%)}}
+
+  /* ===== CARDS ===== */
+  .grid{display:grid;gap:16px;margin-top:28px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .card{background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;padding:22px;transition:transform .25s,border-color .25s,box-shadow .25s;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(56,189,248,.14),transparent 70%);transform:translateX(-120%);transition:transform .8s;pointer-events:none}
+  .card:hover{border-color:var(--accent);box-shadow:0 10px 40px rgba(56,189,248,.18)}
+  .card:hover::before{transform:translateX(120%)}
+  .card.hotc{border-left-color:var(--hot)}
+  .card h3{font-size:1.05rem;margin-bottom:6px}.card p{color:var(--muted);font-size:.94rem}
+  .num{color:var(--accent);font-weight:800;font-size:.8rem;margin-bottom:6px}
+  .ico{font-size:1.6rem;margin-bottom:8px;display:block;animation:bob 3s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateY(-5px)}}
+  .reveal{opacity:0;transform:translateY(34px) scale(.98);transition:opacity .8s ease,transform .8s ease}
+  .reveal.in{opacity:1;transform:none}
+
+  /* ===== DIAGRAM ===== */
+  .diagram{margin-top:28px;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 0 50px rgba(56,189,248,.10)}
+  .diagram svg{width:100%;height:auto;display:block}
+  .diagram img{width:100%;height:auto;display:block;border-radius:8px;margin-bottom:12px}
+  .cap{color:var(--muted);font-size:.82rem;text-align:center;margin-top:8px}
+  .spray{stroke:var(--accent);stroke-width:1.6;fill:none;stroke-dasharray:6 10;animation:up 1s linear infinite;opacity:.9}
+  .drain{stroke:var(--accent2);stroke-width:2;fill:none;stroke-dasharray:5 9;animation:down 1.3s linear infinite}
+  .loop{stroke:var(--accent);stroke-width:2;fill:none;stroke-dasharray:6 8;animation:down 1.1s linear infinite}
+  @keyframes up{to{stroke-dashoffset:-32}}@keyframes down{to{stroke-dashoffset:-28}}
+  .chip{animation:cool 3.5s ease-in-out infinite alternate}
+  @keyframes cool{from{fill:#7c3a14;stroke:var(--hot)}to{fill:#16405a;stroke:var(--accent)}}
+
+  .steps .step{position:relative}
+  .steps .step::after{content:"→";position:absolute;right:-14px;top:50%;color:var(--accent);font-size:1.3rem;animation:nudge 1.4s ease-in-out infinite}
+  .steps .step:last-child::after{display:none}
+  @keyframes nudge{50%{transform:translateX(5px)}}
+
+  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:.93rem}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:1px}
+  td{color:var(--muted)}td:first-child{color:var(--text);font-weight:600}
+  td.val{color:var(--accent2);font-weight:700;white-space:nowrap}
+  .tablewrap{overflow-x:auto}
+
+  .status li{margin:10px 0 10px 20px;color:var(--muted)}.status b{color:var(--text)}
+
+  /* ===== CALCULATION ===== */
+  .warnbox{margin-top:22px;border:1px solid var(--warn);background:rgba(251,191,36,.07);border-radius:8px;padding:16px 18px;color:#f5deb0;font-size:.95rem}
+  .warnbox b{color:var(--warn);letter-spacing:1.5px}
+  .sub{margin-top:36px;font-size:1.1rem;color:var(--text);display:flex;align-items:center;gap:10px}
+  .sub::before{content:"";width:26px;height:2px;background:var(--hot)}
+  .formula{font-family:ui-monospace,Menlo,Consolas,monospace;background:rgba(3,6,10,.7);border:1px solid var(--line);border-radius:6px;padding:12px 14px;color:var(--accent2);font-size:.88rem;margin-top:10px;overflow-x:auto;white-space:nowrap}
+  .formula small{color:var(--muted)}
+  .bars{margin-top:18px;display:grid;gap:14px}
+  .bar{background:rgba(3,6,10,.6);border:1px solid var(--line);border-radius:6px;padding:12px 14px;position:relative}
+  .bar .row{display:flex;justify-content:space-between;gap:10px;font-size:.88rem;margin-bottom:8px;flex-wrap:wrap}
+  .bar .row span:first-child{color:var(--muted)}.bar .row b{color:#fff}
+  .track{height:12px;background:rgba(255,255,255,.06);border-radius:6px;position:relative;overflow:visible}
+  .fill{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width 1.4s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 14px rgba(56,189,248,.5)}
+  .mark{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--hot);box-shadow:0 0 8px var(--hot)}
+  .mark em{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-style:normal;font-size:.68rem;color:var(--hot);white-space:nowrap;letter-spacing:1px}
+  .est{margin-top:20px}
+  .est input[type=range]{width:100%;accent-color:var(--hot);margin:14px 0}
+  .est .out{display:flex;flex-wrap:wrap;gap:18px;align-items:baseline}
+  .est .big{font-size:2rem;font-weight:800;color:var(--accent2)}
+  .verdict{font-size:.9rem;padding:4px 12px;border-radius:999px;border:1px solid}
+  .verdict.ok{color:var(--ok);border-color:var(--ok)}.verdict.no{color:var(--hot);border-color:var(--hot)}
+  .chal{counter-reset:c}
+  .chal li{list-style:none;position:relative;padding:14px 16px 14px 52px;margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:.94rem}
+  .chal li::before{counter-increment:c;content:counter(c);position:absolute;left:14px;top:12px;width:26px;height:26px;border-radius:50%;background:rgba(251,146,60,.15);border:1px solid var(--hot);color:var(--hot);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}
+  .chal b{color:var(--text)}
+
+  /* ===== COLLAB ===== */
+  .split{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:28px}
+  .list li{margin:9px 0 9px 20px;color:var(--muted);font-size:.94rem}.list b{color:var(--text)}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .tag{border:1px solid var(--line);padding:5px 12px;border-radius:999px;font-size:.82rem;color:var(--muted);background:rgba(255,255,255,.03);transition:all .2s}
+  .tag:hover{border-color:var(--accent);color:#fff;transform:translateY(-2px)}
+  .contact-box{margin-top:30px;border:1px solid var(--line);border-radius:10px;padding:28px;background:linear-gradient(135deg,rgba(56,189,248,.10),rgba(167,139,250,.08));position:relative;overflow:hidden}
+  .contact-box::after{content:"";position:absolute;inset:-2px;border-radius:10px;padding:2px;background:conic-gradient(from 0deg,transparent,var(--accent),transparent 30%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:rot 5s linear infinite;pointer-events:none}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .email{font-size:1.15rem;color:#fff;word-break:break-all}
+  .copied{color:var(--ok);font-size:.85rem;margin-left:10px;opacity:0;transition:opacity .3s}
+  .copied.show{opacity:1}
+  footer{padding:40px 0;color:var(--muted);font-size:.85rem}
+
+  @media(max-width:760px){nav ul li:not(.keep){display:none}.steps .step::after{display:none}.hero-gpu{width:640px;right:-200px;opacity:.28}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
+
+  /* ===== PATENT EXPIRED SIGNAL ===== */
+  .patent-card{margin-top:26px;max-width:760px;border:1px solid rgba(248,113,113,.4);border-left:3px solid #f87171;background:linear-gradient(135deg,rgba(248,113,113,.09),rgba(12,19,30,.78));backdrop-filter:blur(8px);border-radius:6px;padding:22px;position:relative;overflow:hidden}
+  .patent-card::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(135deg,transparent 0 14px,rgba(248,113,113,.035) 14px 16px);pointer-events:none}
+  .stamp{display:inline-flex;align-items:center;gap:10px;border:3px solid #f87171;color:#f87171;font-weight:900;letter-spacing:4px;font-size:1.25rem;padding:7px 18px;border-radius:6px;transform:rotate(-3deg);text-shadow:0 0 14px rgba(248,113,113,.55);box-shadow:0 0 22px rgba(248,113,113,.25),inset 0 0 14px rgba(248,113,113,.12);animation:stampin .7s cubic-bezier(.2,1.6,.4,1) both,stampglow 2.8s ease-in-out .8s infinite}
+  .stamp .dot{width:10px;height:10px;border-radius:50%;background:#f87171;box-shadow:0 0 10px #f87171;animation:blink 1.1s steps(1) infinite}
+  @keyframes stampin{from{opacity:0;transform:rotate(-3deg) scale(2.2)}to{opacity:1;transform:rotate(-3deg) scale(1)}}
+  @keyframes stampglow{50%{box-shadow:0 0 38px rgba(248,113,113,.5),inset 0 0 14px rgba(248,113,113,.12)}}
+  .patent-meta{margin-top:18px;display:grid;gap:7px;font-size:.84rem;color:var(--text);position:relative;z-index:1}
+  .patent-meta span{color:var(--muted);font-size:.7rem;letter-spacing:1.5px;margin-right:6px}
+  .patent-meta b{color:#f87171}
+  .patent-meta em{color:var(--muted);font-style:normal;font-size:.78rem}
+  .patent-note{margin-top:14px;color:var(--muted);font-size:.8rem;position:relative;z-index:1}
+  .exp-tag{display:inline-block;margin-left:8px;border:1px solid #f87171;color:#f87171;border-radius:4px;padding:1px 8px;font-size:.66rem;letter-spacing:1.5px;font-weight:800;vertical-align:middle}
+
+  /* ===== REAL-WORLD PHOTOGRAPHY ===== */
+  .photo-context{margin-top:28px;display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:14px}
+  .photo-tile{position:relative;min-height:220px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#0b121c;isolation:isolate}
+  .photo-tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .65s ease;z-index:-2}
+  .photo-tile::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(3,7,13,.94),rgba(3,7,13,.06) 78%);z-index:-1}
+  .photo-tile:hover img{transform:scale(1.055)}
+  .photo-label{position:absolute;left:16px;right:16px;bottom:15px}
+  .photo-label b{display:block;color:#fff;font-size:.98rem}
+  .photo-label span{display:block;color:#c3d1df;font-size:.78rem;margin-top:3px}
+  .photo-kicker{display:inline-block;color:var(--accent2);font-size:.7rem;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px}
+  .idea-photo{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch;margin-top:26px}
+  .idea-photo .photo-tile{min-height:300px}
+  .photo-note{color:var(--muted);font-size:.78rem;margin-top:9px}
+  .photo-tile.wide{min-height:290px}
+  @media(max-width:760px){.photo-context{grid-template-columns:1fr}.photo-tile{min-height:230px}.idea-photo{grid-template-columns:1fr}.idea-photo .photo-tile{min-height:240px}}
+  @media(prefers-reduced-motion:reduce){.photo-tile img{transition:none}}
+
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<canvas id="bg"></canvas>
+<div class="photo"></div>
+<div class="traces"></div>
+<div class="aurora"><i></i><i></i><i></i><i></i></div>
+<div class="gridfx"></div>
+<div class="scan"></div>
+<div id="spot"></div>
+
+<nav><div class="wrap">
+  <div class="logo"><svg class="mini-fan" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div>Gpu<span>Arc</span></div></div>
+  <ul>
+    <li><a href="#problem">Problem</a></li><li><a href="#idea">Idea</a></li><li><a href="#how">How it works</a></li>
+    <li class="keep"><a class="navbtn" href="#calculation">CALCULATION</a></li>
+    <li><a href="#status">Status</a></li><li><a href="#collab">Collaborate</a></li><li><a href="#contact">Contact</a></li>
+  </ul>
+</div></nav>
+
+<header>
+  <!-- Original illustration of a graphics card with spinning fans (decorative background) -->
+  <svg class="hero-gpu" viewBox="0 0 900 380" aria-hidden="true">
+    <defs>
+      <linearGradient id="shroud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2a3b"/><stop offset="1" stop-color="#0a1119"/></linearGradient>
+      <linearGradient id="led" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#38bdf8"/><stop offset=".5" stop-color="#a78bfa"/><stop offset="1" stop-color="#fb923c"/></linearGradient>
+      <path id="blade" d="M0 -9 C 18 -22, 38 -36, 30 -60 C 12 -54, 3 -34, 0 -9Z" fill="#1d2d40" stroke="#38bdf8" stroke-opacity=".7" stroke-width="1"/>
+      <g id="fanset">
+        <circle r="70" fill="#070d15" stroke="#2b3a4d" stroke-width="3"/>
+        <circle r="66" fill="none" stroke="#38bdf8" stroke-opacity=".25"/>
+        <g class="fan">
+          <use href="#blade"/><use href="#blade" transform="rotate(40)"/><use href="#blade" transform="rotate(80)"/>
+          <use href="#blade" transform="rotate(120)"/><use href="#blade" transform="rotate(160)"/><use href="#blade" transform="rotate(200)"/>
+          <use href="#blade" transform="rotate(240)"/><use href="#blade" transform="rotate(280)"/><use href="#blade" transform="rotate(320)"/>
+          <circle r="11" fill="#0d1a28" stroke="#38bdf8"/>
+        </g>
+      </g>
+      <g id="fanstill">
+        <circle r="70" fill="#070d15" stroke="#38bdf8" stroke-opacity=".8" stroke-width="3"/>
+        <circle r="62" fill="none" stroke="#38bdf8" stroke-opacity=".4"/>
+        <use href="#blade"/><use href="#blade" transform="rotate(40)"/><use href="#blade" transform="rotate(80)"/>
+        <use href="#blade" transform="rotate(120)"/><use href="#blade" transform="rotate(160)"/><use href="#blade" transform="rotate(200)"/>
+        <use href="#blade" transform="rotate(240)"/><use href="#blade" transform="rotate(280)"/><use href="#blade" transform="rotate(320)"/>
+        <circle r="11" fill="#0d1a28" stroke="#38bdf8"/>
+      </g>
+    </defs>
+    <!-- bracket + ports -->
+    <rect x="60" y="82" width="46" height="216" rx="4" fill="#243447" stroke="#38bdf8" stroke-opacity=".5"/>
+    <rect x="72" y="110" width="22" height="12" rx="2" fill="#070d15"/><rect x="72" y="134" width="22" height="12" rx="2" fill="#070d15"/>
+    <rect x="72" y="158" width="22" height="12" rx="2" fill="#070d15"/><rect x="72" y="182" width="22" height="12" rx="2" fill="#070d15"/>
+    <!-- body -->
+    <rect x="106" y="90" width="700" height="200" rx="14" fill="url(#shroud)" stroke="#38bdf8" stroke-opacity=".55" stroke-width="2"/>
+    <path d="M130 108H790M130 272H790" stroke="#38bdf8" stroke-opacity=".18"/>
+    <rect class="led" x="130" y="278" width="640" height="4" rx="2" fill="url(#led)"/>
+    <!-- fans -->
+    <g transform="translate(260 190)"><use href="#fanset"/></g>
+    <g transform="translate(456 190)"><use href="#fanset"/></g>
+    <g transform="translate(652 190)"><use href="#fanset"/></g>
+    <!-- power connector + PCIe edge -->
+    <rect x="690" y="74" width="80" height="16" rx="3" fill="#243447" stroke="#fb923c" stroke-opacity=".7"/>
+    <rect x="240" y="290" width="330" height="20" rx="2" fill="#4a3a14" stroke="#fbbf24" stroke-opacity=".6"/>
+    <g stroke="#fbbf24" stroke-opacity=".7"><path d="M252 294v12M262 294v12M272 294v12M282 294v12M292 294v12M302 294v12M312 294v12M322 294v12M332 294v12M342 294v12M352 294v12M362 294v12M372 294v12M382 294v12M392 294v12M402 294v12M412 294v12M422 294v12M432 294v12M442 294v12M452 294v12M462 294v12M472 294v12M482 294v12M492 294v12M502 294v12M512 294v12M522 294v12M532 294v12M542 294v12M552 294v12"/></g>
+  </svg>
+
+  <div class="wrap">
+    <div class="eyebrow"><span class="idx mono">//</span>Concept-stage cooling architecture</div>
+    <h1>Cool the <em>die directly</em>.<br>Remove the cold plate.</h1>
+    <p class="lead">A gravity-assisted direct spray cooling concept for AI GPUs. Open to collaboration.</p>
+
+    <div class="term mono">
+      <div class="term-bar"><i></i><i></i><i></i><span>GpuArc</span></div>
+      <div class="term-body" id="term"></div>
+    </div>
+
+    <span class="badge">Stage: TRL 1-2 &middot; concept and CAD only, no physical prototype yet</span>
+    <div class="btns">
+      <a class="btn hot" href="#calculation">CALCULATION</a>
+      <a class="btn primary" href="#collab">Collaborate with me</a>
+      <a class="btn ghost" href="https://drive.google.com/file/d/1j-iBi-QaJJF_c3qOlTcjcaHD1mCbcmYK/view?usp=sharing" target="_blank" rel="noopener">View pitch deck</a>
+    </div>
+  </div>
+</header>
+
+<div class="marquee"><div>
+  <span>Direct spray cooling</span><span>No bonded cold plate</span><span>Gravity-assisted drain</span><span>AI GPU thermal management</span><span>First-order thermal analysis</span><span>Open to co-development</span><span>TRL 1-2 concept</span>
+  <span>Direct spray cooling</span><span>No bonded cold plate</span><span>Gravity-assisted drain</span><span>AI GPU thermal management</span><span>First-order thermal analysis</span><span>Open to co-development</span><span>TRL 1-2 concept</span>
+</div></div>
+
+<section id="problem"><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">01</span>The problem</div>
+    <h2>AI chips are getting too hot for today's cooling</h2>
+    <p class="lead">Each new GPU generation pushes more power through a similar footprint. Most liquid cooling still uses a cold plate bonded to the chip, which adds thermal layers between the silicon and the coolant.</p>
+  </div>
+  <div class="grid">
+    <div class="card reveal tilt"><span class="ico">🔥</span><h3>Rising heat density</h3><p>More watts through the same area every generation.</p></div>
+    <div class="card reveal tilt"><span class="ico">🧱</span><h3>Extra thermal layers</h3><p>Cold plates and interface materials add resistance.</p></div>
+    <div class="card reveal tilt"><span class="ico">🏭</span><h3>Infrastructure strain</h3><p>Data centres need cooling that scales without more complexity.</p></div>
+  </div>
+  <div class="photo-context reveal" aria-label="Real-world context photographs">
+    <article class="photo-tile">
+      <img loading="lazy" src="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=85" alt="Rows of server racks in a data centre">
+      <div class="photo-label"><span class="photo-kicker">01 / Infrastructure</span><b>AI compute at scale</b><span>Dense server racks concentrate power and heat.</span></div>
+    </article>
+    <article class="photo-tile">
+      <img loading="lazy" src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1000&q=85" alt="Close-up of an electronic circuit board">
+      <div class="photo-label"><span class="photo-kicker">02 / Silicon</span><b>Compact electronics</b><span>Heat must leave a small, high-power footprint.</span></div>
+    </article>
+    <article class="photo-tile">
+      <img loading="lazy" src="https://images.unsplash.com/photo-1587202372775-e229f172b9d7?auto=format&fit=crop&w=1000&q=85" alt="Computer hardware and graphics card components">
+      <div class="photo-label"><span class="photo-kicker">03 / Hardware</span><b>GPU hardware</b><span>Cooling architecture sits at the heart of performance.</span></div>
+    </article>
+  </div>
+  <p class="photo-note">Illustrative real-world photographs for context only; these are not GpuArc hardware or test results.</p>
+</div></section>
+
+<section id="idea"><svg class="deco d-idea" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">02</span>The idea</div>
+    <h2>Spray the chip. Let gravity do the drainage.</h2>
+    <p class="lead">The GPU is mounted face-down in a sealed chamber. A nozzle sprays coolant directly onto the die. Heated coolant runs down the walls into a small sump, then loops back through a pump and chiller.</p>
+  </div>
+
+  <div class="diagram reveal">
+    <!-- Put your render next to index.html as concept.png and it will show here -->
+    <img src="concept.png" alt="GpuArc concept render" onerror="this.remove()">
+    <svg viewBox="0 0 760 360" role="img" aria-label="Animated schematic of the GpuArc spray cooling chamber">
+      <rect x="90" y="30" width="360" height="290" rx="14" fill="none" stroke="#2b3a4d" stroke-width="2"/>
+      <text x="100" y="22" fill="#93a4b8" font-size="12">Sealed chamber</text>
+      <rect x="150" y="38" width="240" height="12" rx="3" fill="#1a2533" stroke="#2b3a4d"/>
+      <rect class="chip" x="170" y="52" width="200" height="22" rx="4" stroke-width="1.5"/>
+      <text x="270" y="68" text-anchor="middle" fill="#e8f0f8" font-size="12">GPU die (face-down)</text>
+      <g>
+        <path class="spray" d="M270 205 L190 78"/><path class="spray" d="M270 205 L225 78" style="animation-delay:.15s"/>
+        <path class="spray" d="M270 205 L255 78" style="animation-delay:.3s"/><path class="spray" d="M270 205 L270 78" style="animation-delay:.45s"/>
+        <path class="spray" d="M270 205 L285 78" style="animation-delay:.3s"/><path class="spray" d="M270 205 L315 78" style="animation-delay:.15s"/>
+        <path class="spray" d="M270 205 L350 78"/>
+      </g>
+      <rect x="262" y="205" width="16" height="30" rx="2" fill="#22d3ee"/>
+      <text x="270" y="252" text-anchor="middle" fill="#93a4b8" font-size="12">Spray nozzle</text>
+      <path class="drain" d="M118 90 L118 268"/><path class="drain" d="M422 90 L422 268" style="animation-delay:.3s"/>
+      <text x="106" y="180" fill="#93a4b8" font-size="11" transform="rotate(-90 106 180)" text-anchor="middle">gravity return flow</text>
+      <rect x="100" y="276" width="340" height="36" rx="6" fill="#12304a" stroke="#38bdf8"/>
+      <text x="270" y="299" text-anchor="middle" fill="#e8f0f8" font-size="12">Minimal coolant sump</text>
+      <path class="loop" d="M440 294 L520 294"/>
+      <rect x="525" y="262" width="100" height="64" rx="8" fill="#0e151e" stroke="#38bdf8"/>
+      <text x="575" y="290" text-anchor="middle" fill="#e8f0f8" font-size="12">Pump</text>
+      <text x="575" y="308" text-anchor="middle" fill="#93a4b8" font-size="11">+ chiller</text>
+      <path class="loop" d="M625 294 L700 294 L700 340 L270 340 L270 236"/>
+      <text x="490" y="355" text-anchor="middle" fill="#93a4b8" font-size="11">cooled coolant returns to nozzle</text>
+    </svg>
+    <p class="cap">GpuArc concept schematic — not a built or tested prototype.</p>
+  </div>
+
+  <div class="idea-photo reveal">
+    <article class="photo-tile wide">
+      <img loading="lazy" src="https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=1400&q=85" alt="Engineering equipment in a technical laboratory">
+      <div class="photo-label"><span class="photo-kicker">Real-world reference</span><b>From concept to bench testing</b><span>A heater-simulator rig could help test flow and heat transfer before risking a GPU.</span></div>
+    </article>
+    <article class="photo-tile wide">
+      <img loading="lazy" src="https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=1400&q=85" alt="Engineers working with technical equipment in a lab">
+      <div class="photo-label"><span class="photo-kicker">Validation pathway</span><b>Measure, simulate, iterate</b><span>CFD, spray coverage and electrical protection remain open engineering questions.</span></div>
+    </article>
+  </div>
+  <p class="photo-note">These photographs illustrate the engineering and validation environment, not an existing GpuArc prototype.</p>
+
+  <div class="grid">
+    <div class="card reveal tilt"><div class="num mono">01</div><h3>No bonded cold plate</h3><p>Coolant meets the die directly, removing a thermal layer.</p></div>
+    <div class="card reveal tilt"><div class="num mono">02</div><h3>Gravity-assisted drain</h3><p>Spent coolant leaves the chip surface by gravity.</p></div>
+    <div class="card reveal tilt"><div class="num mono">03</div><h3>External chiller loop</h3><p>Heat is rejected away from the chip, keeping the chamber compact.</p></div>
+  </div>
+</div></section>
+
+<section id="how"><svg class="deco rev d-how" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">03</span>How it works</div>
+    <h2>Three steps in a closed loop</h2>
+  </div>
+  <div class="grid steps">
+    <div class="card step reveal tilt"><div class="num mono">STEP 1</div><h3>Spray</h3><p>The nozzle directs coolant onto the face-down die.</p></div>
+    <div class="card step reveal tilt"><div class="num mono">STEP 2</div><h3>Drain</h3><p>Heated coolant returns along the walls into the sump.</p></div>
+    <div class="card step reveal tilt"><div class="num mono">STEP 3</div><h3>Recirculate</h3><p>A pump moves it through a chiller and back to the nozzle.</p></div>
+  </div>
+</div></section>
+
+<!-- ================= CALCULATION ================= -->
+<section id="calculation"><svg class="deco d-calc" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">04</span>Calculation</div>
+    <h2>First-Order Thermal Analysis</h2>
+    <p class="lead">Concept stage, TRL 1-2.</p>
+    <div class="warnbox"><b>STATUS</b><br>Concept-stage. CAD in progress. No physical prototype. No experimental validation yet. All figures below are analytical estimates from first-principles heat transfer, not measured results.</div>
+  </div>
+
+  <h3 class="sub reveal">Concept</h3>
+  <p class="lead reveal" style="margin-top:8px">Gravity-assisted direct spray cooling for AI GPUs. The chip is mounted face-down in a sealed chamber. Coolant is sprayed onto the die, drains by gravity to a sump, and is recirculated through an external chiller. This removes the bonded cold plate and its thermal interface layers.</p>
+
+  <h3 class="sub reveal">Baseline assumptions</h3>
+  <div class="grid">
+    <div class="card hotc reveal"><div class="num mono">REFERENCE CHIP</div><h3>H100-class</h3><p>700 W, die area ~814 mm² (8.14 cm²), heat flux ~86 W/cm²</p></div>
+    <div class="card hotc reveal"><div class="num mono">COOLANT</div><h3>Deionized (DI) water</h3><p>Inlet 45 °C, coolant rise 10 K</p></div>
+    <div class="card hotc reveal"><div class="num mono">LIMITS</div><h3>Max junction 85 °C</h3><p>Pump efficiency 50%, spray pressure 5 bar</p></div>
+  </div>
+
+  <h3 class="sub reveal">Results (analytical estimates)</h3>
+  <div class="tablewrap reveal">
+    <table>
+      <tr><th>Quantity</th><th>Result</th></tr>
+      <tr><td>Coolant flow (700 W, 10 K rise)</td><td class="val">~1.0 L/min per GPU</td></tr>
+      <tr><td>Pump power (5 bar)</td><td class="val">~17 W per GPU (~2.4% of chip power)</td></tr>
+      <tr><td>Rack-level flow (100 kW, 10 K)</td><td class="val">~144 L/min</td></tr>
+      <tr><td>Required spray heat transfer coefficient (h) to hold 85 °C</td><td class="val">≥ ~21,500 W/m²K</td></tr>
+    </table>
+  </div>
+
+  <div class="formula reveal">Q = ṁ · c<sub>p</sub> · ΔT &nbsp;→&nbsp; ṁ = 700 / (4186 × 10) ≈ 0.0167 kg/s ≈ 1.0 L/min &nbsp;<small>(c<sub>p</sub> of water ≈ 4186 J/kg·K)</small></div>
+  <div class="formula reveal">P<sub>pump</sub> = V̇ · ΔP / η = (1.67×10⁻⁵ m³/s × 5×10⁵ Pa) / 0.5 ≈ 17 W</div>
+  <div class="formula reveal">h<sub>req</sub> = Q / (A · ΔT) = 700 / (8.14×10⁻⁴ m² × 40 K) ≈ 21,500 W/m²K</div>
+
+  <h3 class="sub reveal">Estimated heat removal per die</h3>
+  <p class="lead reveal" style="margin-top:8px">Q = h × A × ΔT, with ΔT = 40 K. The orange line marks the 700 W baseline chip power.</p>
+  <div class="bars" id="bars">
+    <div class="bar reveal"><div class="row"><span>h = 20,000 W/m²K</span><b>~650 W</b></div><div class="track"><div class="fill" data-w="650"></div><div class="mark" data-w="700"><em>700 W</em></div></div></div>
+    <div class="bar reveal"><div class="row"><span>h = 50,000 W/m²K</span><b>~1,600 W</b></div><div class="track"><div class="fill" data-w="1600"></div><div class="mark" data-w="700"><em>700 W</em></div></div></div>
+    <div class="bar reveal"><div class="row"><span>h = 100,000 W/m²K</span><b>~3,200 W</b></div><div class="track"><div class="fill" data-w="3200"></div><div class="mark" data-w="700"><em>700 W</em></div></div></div>
+  </div>
+  <p class="lead reveal" style="margin-top:18px"><b style="color:var(--text)">Realistic target range:</b> 700 - 1,600 W per die, dependent on achieved h.</p>
+
+  <div class="card est reveal">
+    <div class="mono" style="color:var(--hot);font-size:.78rem;letter-spacing:2px">HEAT REMOVAL ESTIMATOR</div>
+    <div style="margin-top:8px;color:var(--muted);font-size:.92rem">Slide the spray heat transfer coefficient. Area = 8.14 cm², ΔT = 40 K.</div>
+    <input type="range" id="hs" min="5000" max="120000" step="500" value="50000" aria-label="Spray heat transfer coefficient">
+    <div class="out">
+      <div><span class="mono" style="color:var(--muted);font-size:.8rem">h =</span> <b id="hv" class="mono">50,000</b> <span style="color:var(--muted);font-size:.85rem">W/m²K</span></div>
+      <div class="big mono"><span id="qv">1,628</span> <span style="font-size:1rem;color:var(--muted)">W</span></div>
+      <div class="verdict ok" id="verdict">Above the 700 W baseline (on paper)</div>
+    </div>
+  </div>
+
+  <h3 class="sub reveal">Key engineering challenges (open)</h3>
+  <ol class="chal reveal">
+    <li><b>Electrical protection:</b> DI water contacting a powered die requires a protective barrier or coating, which adds thermal resistance and must be validated.</li>
+    <li><b>Spray coverage:</b> achieving h ≥ ~21,500 W/m²K with uniform spray coverage across the die.</li>
+    <li><b>Pump penalty:</b> pump pressure and power penalty in direct-to-chip spray configurations.</li>
+    <li><b>Die and lid handling:</b> exposing the die for direct spray.</li>
+  </ol>
+
+  <h3 class="sub reveal">Next steps</h3>
+  <div class="grid">
+    <div class="card reveal tilt"><div class="num mono">01</div><h3>Complete CAD</h3><p>Finish the SolidWorks model.</p></div>
+    <div class="card reveal tilt"><div class="num mono">02</div><h3>CFD / flow simulation</h3><p>Validate h and spray coverage.</p></div>
+    <div class="card reveal tilt"><div class="num mono">03</div><h3>Prototype and test</h3><p>Use a heater-simulator die.</p></div>
+  </div>
+
+  <div class="warnbox reveal"><b>NOTE</b><br>Figures are first-order estimates for concept evaluation. They are not validated performance claims.</div>
+</div></section>
+
+<section id="prior"><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">05</span>Prior art</div>
+    <h2>Built on a known approach, with a different goal</h2>
+    <p class="lead">Spray cooling is not new. The closest prior art is the ISR/SprayCool patent (US 6,889,515), with a similar chip-down, spray-up, gravity-drain geometry. GpuArc revisits it for modern AI GPU power levels.</p>
+
+    <div class="patent-card">
+      <div class="stamp" role="status" aria-label="Patent expired"><span class="dot"></span>PATENT EXPIRED</div>
+      <div class="patent-meta mono">
+        <div><span>PATENT</span> US 6,889,515 B2 &middot; "Spray cooling system"</div>
+        <div><span>ORIGINAL ASSIGNEE</span> Isothermal Systems Research Inc. (now Parker Intangibles LLC)</div>
+        <div><span>FILED</span> 14 Feb 2003 &nbsp;&middot;&nbsp; <span>GRANTED</span> 10 May 2005</div>
+        <div><span>EXPIRED</span> <b>12 Nov 2022</b> <em>(anticipated expiry date, status "Expired - Lifetime")</em></div>
+      </div>
+      <p class="patent-note">Status as listed by <a href="https://patents.google.com/patent/US6889515B2/en" target="_blank" rel="noopener">Google Patents</a>; it is not a legal conclusion. This one expired patent does not clear later spray-cooling patents, and no freedom-to-operate check has been done for GpuArc.</p>
+    </div>
+  </div>
+  <div class="tablewrap reveal"><table>
+    <tr><th>Approach</th><th>How it differs</th></tr>
+    <tr><td>Cold plate liquid cooling</td><td>Coolant flows through a plate bonded to the chip. GpuArc removes the plate.</td></tr>
+    <tr><td>Current commercial solutions</td><td>JetCool, CoolIT, Motivair and Accelsius still use plate-based designs.</td></tr>
+    <tr><td>Classic spray cooling <span class="exp-tag">PATENT EXPIRED</span></td><td>Same core geometry. GpuArc targets current AI accelerators with a modern external loop.</td></tr>
+  </table></div>
+</div></section>
+
+<section id="status"><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">06</span>Honest status</div>
+    <h2>Where the project actually stands</h2>
+    <ul class="status">
+      <li><b>Stage:</b> TRL 1-2. Concept defined, CAD in early progress.</li>
+      <li><b>Not done yet:</b> no physical prototype, no validated thermal data.</li>
+      <li><b>Open challenge:</b> pump pressure in direct-to-chip setups, raised by an industry expert.</li>
+      <li><b>Next:</b> finish CAD, run flow and thermal simulation, build a bench prototype.</li>
+    </ul>
+  </div>
+</div></section>
+
+<section id="collab"><svg class="deco rev d-collab" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">07</span>Collaboration</div>
+    <h2>Let's build this together</h2>
+    <p class="lead">GpuArc is an idea I conceived independently as a student. I am not trying to run it alone. The goal is to find the right partners to test it properly, improve it, and find out honestly whether it works.</p>
+  </div>
+  <div class="split">
+    <div class="card reveal tilt">
+      <span class="ico">🤝</span><h3>Who I want to work with</h3>
+      <div class="tags">
+        <span class="tag">Cooling specialists</span><span class="tag">Chip and hardware makers</span><span class="tag">Hyperscalers</span>
+        <span class="tag">AI infrastructure teams</span><span class="tag">University labs</span><span class="tag">Thermal and CFD engineers</span><span class="tag">Mentors</span>
+      </div>
+    </div>
+    <div class="card reveal tilt">
+      <span class="ico">🧩</span><h3>Ways to collaborate</h3>
+      <ul class="list">
+        <li><b>Co-development:</b> refine the architecture together.</li>
+        <li><b>Lab partnership:</b> bench testing and a first prototype.</li>
+        <li><b>Simulation support:</b> CFD and thermal validation.</li>
+        <li><b>Licensing:</b> if the concept proves out.</li>
+        <li><b>Technical feedback:</b> especially on pump pressure, electrical protection and coolant choice.</li>
+        <li><b>Institutional backing:</b> research or funding routes through my college.</li>
+      </ul>
+    </div>
+    <div class="card reveal tilt">
+      <span class="ico">🎯</span><h3>What I bring</h3>
+      <ul class="list">
+        <li>A clearly defined concept with a documented pitch deck.</li>
+        <li>A first-order thermal analysis with stated assumptions.</li>
+        <li>Prior-art research and honest positioning against current solutions.</li>
+        <li>CAD modeling in progress.</li>
+        <li>Time, energy, and willingness to learn fast and iterate.</li>
+      </ul>
+    </div>
+    <div class="card reveal tilt">
+      <span class="ico">🧭</span><h3>How I work</h3>
+      <ul class="list">
+        <li><b>Transparent:</b> I state clearly what is proven and what is not.</li>
+        <li><b>Open to critique:</b> hard technical feedback is welcome.</li>
+        <li><b>Credit-fair:</b> contributions and credit are agreed upfront.</li>
+      </ul>
+    </div>
+  </div>
+</div></section>
+
+<section id="contact"><svg class="deco d-contact" viewBox="-80 -80 160 160" aria-hidden="true"><use href="#fanstill"/></svg><div class="wrap">
+  <div class="reveal">
+    <div class="eyebrow"><span class="idx mono">08</span>Get in touch</div>
+    <h2>Interested? Reach out.</h2>
+    <p class="lead">I'm Abhay, a Mechanical Engineering student (2nd year). If you work in cooling, chips, or AI infrastructure, even a short reply with feedback helps.</p>
+    <div class="contact-box">
+      <div class="mono" style="color:var(--muted);font-size:.8rem;margin-bottom:6px">EMAIL</div>
+      <div class="email mono"><a href="mailto:aaabhhyj01@gmail.com?subject=GpuArc%20collaboration" style="color:#fff">aaabhhyj01@gmail.com</a>
+        <span class="copied" id="copied">copied</span></div>
+      <div class="btns">
+        <a class="btn primary" href="mailto:aaabhhyj01@gmail.com?subject=GpuArc%20collaboration">Send an email</a>
+        <button class="btn ghost" id="copy">Copy email</button>
+        <a class="btn ghost" href="https://www.linkedin.com/in/abhay-jha-7576b3365" target="_blank" rel="noopener">LinkedIn</a>
+        <a class="btn ghost" href="https://drive.google.com/file/d/1j-iBi-QaJJF_c3qOlTcjcaHD1mCbcmYK/view?usp=sharing" target="_blank" rel="noopener">Pitch deck</a>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">GpuArc is an independent student concept. Not affiliated with any company named on this page.</div></footer>
+
+<script>
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Scroll reveal (+ animate calculation bars when visible)
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('in');
+        var f = e.target.querySelector('.fill');
+        if(f){ setTimeout(function(){ f.style.width = Math.min(100, f.dataset.w/3300*100)+'%'; }, 200); }
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+  document.querySelectorAll('.mark').forEach(function(m){ m.style.left = (m.dataset.w/3300*100)+'%'; });
+
+  // Scroll progress
+  var bar = document.getElementById('progress');
+  addEventListener('scroll', function(){
+    var h = document.documentElement;
+    bar.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  }, {passive:true});
+
+  // Cursor spotlight + card tilt
+  var spot = document.getElementById('spot');
+  addEventListener('mousemove', function(e){ spot.style.left=e.clientX+'px'; spot.style.top=e.clientY+'px'; });
+  document.querySelectorAll('.tilt').forEach(function(c){
+    c.addEventListener('mousemove', function(e){
+      var r=c.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
+      c.style.transform='perspective(700px) rotateY('+(x*8)+'deg) rotateX('+(-y*8)+'deg) translateY(-4px)';
+    });
+    c.addEventListener('mouseleave', function(){ c.style.transform=''; });
+  });
+
+  // Heat removal estimator: Q = h * A * dT, A = 8.14e-4 m2, dT = 40 K
+  var hs=document.getElementById('hs'), hv=document.getElementById('hv'), qv=document.getElementById('qv'), vd=document.getElementById('verdict');
+  function est(){
+    var h=+hs.value, q=h*8.14e-4*40;
+    hv.textContent=h.toLocaleString('en-US'); qv.textContent=Math.round(q).toLocaleString('en-US');
+    if(q>=700){ vd.className='verdict ok'; vd.textContent='Above the 700 W baseline (on paper)'; }
+    else { vd.className='verdict no'; vd.textContent='Below the 700 W baseline'; }
+  }
+  hs.addEventListener('input', est); est();
+
+  // Particle background
+  var cv=document.getElementById('bg'), ctx=cv.getContext('2d'), W, H, P=[], mouse={x:-999,y:-999};
+  function size(){ W=cv.width=innerWidth; H=cv.height=innerHeight; }
+  size(); addEventListener('resize', size);
+  addEventListener('mousemove', function(e){ mouse.x=e.clientX; mouse.y=e.clientY; });
+  function mk(){ return {x:Math.random()*W, y:Math.random()*H, r:Math.random()*2+.6, vx:(Math.random()-.5)*.3, vy:-(Math.random()*.6+.15), hot:Math.random()<.18}; }
+  var N=Math.min(110, Math.floor(innerWidth/12));
+  for(var i=0;i<N;i++) P.push(mk());
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    for(var i=0;i<P.length;i++){
+      var p=P[i], dx=p.x-mouse.x, dy=p.y-mouse.y, d=Math.sqrt(dx*dx+dy*dy);
+      if(d<140&&d>0){ p.x+=dx/d*1.6; p.y+=dy/d*1.6; }
+      p.x+=p.vx; p.y+=p.vy;
+      if(p.y<-10){ p.y=H+10; p.x=Math.random()*W; }
+      if(p.x<-10) p.x=W+10; if(p.x>W+10) p.x=-10;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.283);
+      ctx.fillStyle=p.hot?'rgba(251,146,60,.85)':'rgba(56,189,248,.8)';
+      ctx.shadowBlur=10; ctx.shadowColor=p.hot?'#fb923c':'#38bdf8'; ctx.fill();
+      for(var j=i+1;j<P.length;j++){
+        var q=P[j], ax=p.x-q.x, ay=p.y-q.y, dd=ax*ax+ay*ay;
+        if(dd<14400){ ctx.shadowBlur=0; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y);
+          ctx.strokeStyle='rgba(56,189,248,'+(0.16*(1-Math.sqrt(dd)/120))+')'; ctx.lineWidth=1; ctx.stroke(); }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  if(!reduce) draw();
+
+  // Prompt-style typing
+  var script=[
+    {t:'p',s:'what is gpuarc?'},
+    {t:'o',s:'A gravity-assisted direct spray cooling concept for AI GPUs.'},
+    {t:'p',s:'how much heat can it remove?'},
+    {t:'o',s:'On paper, 700 W needs h >= ~21,500 W/m2K. Unvalidated.'},
+    {t:'p',s:'looking for?'},
+    {t:'o',s:'Co-development, lab partners, honest technical feedback.'},
+    {t:'p',s:'current stage?'},
+    {t:'o',s:'TRL 1-2. Concept + CAD. No prototype yet.',ok:true}
+  ];
+  var term=document.getElementById('term');
+  function line(type){
+    var d=document.createElement('div');
+    if(type==='p') d.innerHTML='<span class="t-prompt">&gt; </span><span class="txt"></span>';
+    else { d.className='t-out'; d.innerHTML='<span class="txt"></span>'; }
+    term.appendChild(d); return d.querySelector('.txt');
+  }
+  function caret(){ var c=document.createElement('span'); c.className='caret'; return c; }
+  function run(){
+    term.innerHTML=''; var i=0;
+    (function next(){
+      if(i>=script.length){ setTimeout(run,4500); return; }
+      var item=script[i++], el=line(item.t), c=caret();
+      el.parentNode.appendChild(c);
+      if(item.ok) el.parentNode.classList.add('t-ok');
+      if(reduce){ el.textContent=item.s; c.remove(); return next(); }
+      var k=0, speed=item.t==='p'?55:20;
+      (function type(){
+        if(k<item.s.length){ el.textContent+=item.s[k++]; setTimeout(type,speed); }
+        else { c.remove(); setTimeout(next,item.t==='p'?350:650); }
+      })();
+    })();
+  }
+  run();
+
+  // Copy email
+  document.getElementById('copy').addEventListener('click', function(){
+    var m='aaabhhyj01@gmail.com', n=document.getElementById('copied');
+    function ok(){ n.classList.add('show'); setTimeout(function(){ n.classList.remove('show'); },1800); }
+    if(navigator.clipboard) navigator.clipboard.writeText(m).then(ok,ok); else ok();
+  });
+</script>
+</body>
+</html>
